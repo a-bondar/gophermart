@@ -2,22 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 
-	"github.com/a-bondar/gophermart/internal/middleware"
-
 	"github.com/a-bondar/gophermart/internal/config"
+	"github.com/a-bondar/gophermart/internal/handlers"
 	"github.com/a-bondar/gophermart/internal/logger"
-	"github.com/jackc/pgx/v5"
+	"github.com/a-bondar/gophermart/internal/router"
+	"github.com/a-bondar/gophermart/internal/service"
+	"github.com/a-bondar/gophermart/internal/storage"
 )
-
-type application struct {
-	logger *slog.Logger
-	config *config.Config
-}
 
 func main() {
 	if err := Run(); err != nil {
@@ -29,46 +26,25 @@ func Run() error {
 	cfg := config.NewConfig()
 	l := logger.NewLogger()
 
-	app := &application{
-		logger: l,
-		config: cfg,
-	}
-
-	mux := http.NewServeMux()
-	conn, err := pgx.Connect(context.Background(), cfg.DatabaseURI)
+	s, err := storage.NewStorage(context.Background(), cfg.DatabaseURI)
 	if err != nil {
-		return fmt.Errorf("unable to connect to database: %w", err)
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 
-	defer func() {
-		err = conn.Close(context.Background())
-		if err != nil {
-			app.logger.ErrorContext(context.Background(), err.Error())
+	defer s.Close()
+
+	svc := service.NewService(s, l)
+	h := handlers.NewHandler(svc, l)
+
+	l.InfoContext(context.Background(), "Running server", slog.String("address", cfg.RunAddr))
+
+	err = http.ListenAndServe(cfg.RunAddr, router.Router(h, l))
+	if err != nil {
+		if !errors.Is(err, http.ErrServerClosed) {
+			l.ErrorContext(context.Background(), err.Error())
+
+			return fmt.Errorf("HTTP server has encountered an error: %w", err)
 		}
-	}()
-
-	err = conn.Ping(context.Background())
-	if err != nil {
-		return fmt.Errorf("unable to ping database: %w", err)
-	}
-
-	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		err = conn.Ping(r.Context())
-		if err != nil {
-			app.logger.ErrorContext(r.Context(), err.Error())
-			http.Error(w, "database is not available", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	})
-
-	app.logger.InfoContext(context.Background(), "Starting server...", slog.String("address", app.config.RunAddr))
-
-	loggedMux := middleware.WithLog(app.logger)(mux)
-	err = http.ListenAndServe(app.config.RunAddr, loggedMux)
-	if err != nil {
-		return fmt.Errorf("unable to start server: %w", err)
 	}
 
 	return nil
