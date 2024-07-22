@@ -91,3 +91,27 @@ To run the linter using `golangci-lint`, run:
  ```sh
  make lint
  ```
+
+### Create a new DB migration
+
+To create a new migration, run:
+
+ ```sh
+ make db_migration_new
+ ```
+
+### Apply DB migrations
+
+To apply all migrations, run:
+
+ ```sh
+ make db_migrate_up
+ ```
+
+### Rollback DB migrations
+
+To roll back the last migration, run:
+
+ ```sh
+ make db_migrate_down
+ ```

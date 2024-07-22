@@ -7,6 +7,7 @@ import (
 )
 
 type Storage interface {
+	CreateUser(ctx context.Context, login, password string) error
 	Ping(ctx context.Context) error
 }
 
@@ -20,6 +21,15 @@ func NewService(storage Storage, logger *slog.Logger) *Service {
 		storage: storage,
 		logger:  logger,
 	}
+}
+
+func (s *Service) CreateUser(ctx context.Context, login, password string) error {
+	err := s.storage.CreateUser(ctx, login, password)
+	if err != nil {
+		return fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {

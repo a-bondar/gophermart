@@ -8,6 +8,7 @@ import (
 )
 
 type Storage interface {
+	CreateUser(ctx context.Context, login, password string) error
 	Ping(ctx context.Context) error
 	Close()
 }
