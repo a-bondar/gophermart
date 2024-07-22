@@ -4,11 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 
+	"github.com/a-bondar/gophermart/internal/middleware"
+
 	"github.com/a-bondar/gophermart/internal/config"
+	"github.com/a-bondar/gophermart/internal/logger"
 	"github.com/jackc/pgx/v5"
 )
+
+type application struct {
+	logger *slog.Logger
+	config *config.Config
+}
 
 func main() {
 	if err := Run(); err != nil {
@@ -18,6 +27,13 @@ func main() {
 
 func Run() error {
 	cfg := config.NewConfig()
+	l := logger.NewLogger()
+
+	app := &application{
+		logger: l,
+		config: cfg,
+	}
+
 	mux := http.NewServeMux()
 	conn, err := pgx.Connect(context.Background(), cfg.DatabaseURI)
 	if err != nil {
@@ -27,7 +43,7 @@ func Run() error {
 	defer func() {
 		err = conn.Close(context.Background())
 		if err != nil {
-			log.Printf("unable to close database connection: %v", err)
+			app.logger.ErrorContext(context.Background(), err.Error())
 		}
 	}()
 
@@ -37,8 +53,9 @@ func Run() error {
 	}
 
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		err := conn.Ping(r.Context())
+		err = conn.Ping(r.Context())
 		if err != nil {
+			app.logger.ErrorContext(r.Context(), err.Error())
 			http.Error(w, "database is not available", http.StatusInternalServerError)
 			return
 		}
@@ -46,9 +63,10 @@ func Run() error {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	log.Printf("Starting server on %s", cfg.RunAddr)
+	app.logger.InfoContext(context.Background(), "Starting server...", slog.String("address", app.config.RunAddr))
 
-	err = http.ListenAndServe(cfg.RunAddr, mux)
+	loggedMux := middleware.WithLog(app.logger)(mux)
+	err = http.ListenAndServe(app.config.RunAddr, loggedMux)
 	if err != nil {
 		return fmt.Errorf("unable to start server: %w", err)
 	}
