@@ -39,6 +39,8 @@ Here are the environment variables you can set in your `.env` file and what they
 - `DB_PASSWORD`: The password for the PostgreSQL database user.
 - `DB_NAME`: The name of the PostgreSQL database.
 - `DATABASE_URI`: The connection URI for the PostgreSQL database.
+- `JWT_SECRET`: The secret key for JWT token generation.
+- `JWT_EXP`: The expiration time for JWT tokens (default is `1h`).
 
 ## Basic Commands
 

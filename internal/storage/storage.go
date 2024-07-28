@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/a-bondar/gophermart/internal/models"
+
 	"github.com/a-bondar/gophermart/internal/storage/postgres"
 )
 
 type Storage interface {
-	CreateUser(ctx context.Context, login, password string) error
+	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
+	SelectUser(ctx context.Context, login string) (*models.User, error)
 	Ping(ctx context.Context) error
 	Close()
 }

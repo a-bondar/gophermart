@@ -33,8 +33,8 @@ func Run() error {
 
 	defer s.Close()
 
-	svc := service.NewService(s, l)
-	h := handlers.NewHandler(svc, l)
+	svc := service.NewService(s, l, cfg)
+	h := handlers.NewHandler(svc, l, cfg)
 
 	l.InfoContext(context.Background(), "Running server", slog.String("address", cfg.RunAddr))
 

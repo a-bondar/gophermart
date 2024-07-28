@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/a-bondar/gophermart/internal/models"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -31,6 +31,44 @@ func NewStorage(ctx context.Context, dsn string) (*Storage, error) {
 	return &Storage{pool: pool}, nil
 }
 
+func (s *Storage) CreateUser(ctx context.Context, login string, hashedPassword []byte) error {
+	_, err := s.pool.Exec(ctx, "INSERT INTO users (login, hashed_password) VALUES ($1, $2)", login, hashedPassword)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return fmt.Errorf("login already exists: %w", models.ErrUserDuplicateLogin)
+		}
+
+		return fmt.Errorf("failed to insert user: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Storage) SelectUser(ctx context.Context, login string) (*models.User, error) {
+	var id int64
+	var hashedPassword string
+	var createdAt time.Time
+
+	err := s.pool.
+		QueryRow(ctx, "SELECT id, hashed_password, created_at FROM users WHERE login = $1", login).
+		Scan(&id, &hashedPassword, &createdAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, models.ErrUserNotFound
+		}
+
+		return nil, fmt.Errorf("failed to select user: %w", err)
+	}
+
+	return &models.User{
+		ID:             id,
+		Login:          login,
+		HashedPassword: hashedPassword,
+		CreatedAt:      createdAt.Format(time.RFC3339),
+	}, nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {
@@ -42,23 +80,4 @@ func (s *Storage) Ping(ctx context.Context) error {
 
 func (s *Storage) Close() {
 	s.pool.Close()
-}
-
-func (s *Storage) CreateUser(ctx context.Context, login, password string) error {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
-	}
-
-	_, err = s.pool.Exec(ctx, "INSERT INTO users (login, hashed_password) VALUES ($1, $2)", login, hashedPassword)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return fmt.Errorf("login already exists: %w", models.ErrUserDuplicateLogin)
-		}
-
-		return fmt.Errorf("failed to insert user: %w", err)
-	}
-
-	return nil
 }
