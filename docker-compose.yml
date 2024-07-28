@@ -15,6 +15,8 @@ services:
     environment:
       RUN_ADDRESS: ${RUN_ADDRESS}
       DATABASE_URI: ${DATABASE_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXP}
     develop:
       watch:
         - action: rebuild
@@ -23,6 +25,7 @@ services:
             - ./**/*.go
             - ./go.mod
             - ./go.sum
+
   accrual:
     platform: linux/amd64
     image: debian:bookworm-slim
@@ -35,6 +38,7 @@ services:
       - ./cmd/accrual/accrual_linux_amd64:/app/accrual
     working_dir: /app
     command: ["./accrual"]
+
   database:
     image: postgres:16.3
     container_name: database
@@ -51,3 +55,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  migrate:
+    image: migrate/migrate
+    container_name: migrate
+    command: [
+      "-path", "/migrations",
+      "-database", "${DATABASE_URI}",
+      "up"
+    ]
+    volumes:
+      - ./internal/storage/postgres/migrations:/migrations
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DATABASE_URI: ${DATABASE_URI}

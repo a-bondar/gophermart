@@ -1,3 +1,5 @@
+include .env
+
 # Variables
 ENV_FILE = .env
 DOCKER_COMPOSE_FILE = docker-compose.yml
@@ -43,3 +45,20 @@ develop:
 lint:
 	@echo "Running linter..."
 	docker run -t --rm -v $(shell pwd):/app -w /app golangci/golangci-lint:v1.59.1 golangci-lint run -v --fix
+
+# Create a new migration
+db_migration_new:
+	@echo "Creating a new migration..."
+	@read -p "Enter migration name: " name; \
+	docker run --rm -v $(shell pwd)/internal/storage/postgres/migrations:/migrations \
+		migrate/migrate create -ext sql -dir /migrations -seq -digits 5 $${name}
+
+# Apply migrations (up)
+db_migrate_up:
+	@echo "Applying migrations..."
+	docker compose run --rm migrate -path /migrations -database ${DATABASE_URI} up
+
+# Rollback migrations (down)
+db_migrate_down:
+	@echo "Rolling back migrations..."
+	docker compose run --rm migrate -path /migrations -database ${DATABASE_URI} down 1
