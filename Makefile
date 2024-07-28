@@ -50,7 +50,7 @@ lint:
 db_migration_new:
 	@echo "Creating a new migration..."
 	@read -p "Enter migration name: " name; \
-	docker run --rm -v $(shell pwd)/db/migrations:/migrations \
+	docker run --rm -v $(shell pwd)/internal/storage/postgres/migrations:/migrations \
 		migrate/migrate create -ext sql -dir /migrations -seq -digits 5 $${name}
 
 # Apply migrations (up)

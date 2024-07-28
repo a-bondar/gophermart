@@ -65,7 +65,7 @@ services:
       "up"
     ]
     volumes:
-      - ./db/migrations:/migrations
+      - ./internal/storage/postgres/migrations:/migrations
     depends_on:
       database:
         condition: service_healthy
