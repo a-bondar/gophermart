@@ -15,14 +15,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Claims struct {
-	jwt.RegisteredClaims
-	UserID int64
-}
-
 type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
+	GetUserBalance(ctx context.Context, userID int) (float64, error)
 	Ping(ctx context.Context) error
 }
 
@@ -69,7 +65,7 @@ func (s *Service) AuthenticateUser(ctx context.Context, login, password string) 
 		return "", models.ErrUserInvalidCredentials
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, models.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.cfg.JWTExp)),
 		},
@@ -82,6 +78,15 @@ func (s *Service) AuthenticateUser(ctx context.Context, login, password string) 
 	}
 
 	return tokenString, nil
+}
+
+func (s *Service) GetUserBalance(ctx context.Context, userID int) (float64, error) {
+	balance, err := s.storage.GetUserBalance(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	return balance, nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {

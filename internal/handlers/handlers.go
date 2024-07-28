@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/a-bondar/gophermart/internal/middleware"
+
 	"github.com/a-bondar/gophermart/internal/config"
 
 	"github.com/a-bondar/gophermart/internal/models"
@@ -19,6 +21,7 @@ const missingRequiredFields = "Missing required fields: login or password"
 type Service interface {
 	CreateUser(ctx context.Context, login, password string) error
 	AuthenticateUser(ctx context.Context, login, password string) (string, error)
+	GetUserBalance(ctx context.Context, userID int) (float64, error)
 	Ping(ctx context.Context) error
 }
 
@@ -138,6 +141,34 @@ func (h *Handler) HandleUserLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	balance, err := h.service.GetUserBalance(r.Context(), userID)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	// @TODO: add withdrawn
+	response := models.HandleUserBalanceResponse{Current: balance, Withdrawn: 0}
+
+	if err = json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {

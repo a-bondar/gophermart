@@ -75,7 +75,7 @@ func (s *Storage) CreateUser(ctx context.Context, login string, hashedPassword [
 }
 
 func (s *Storage) SelectUser(ctx context.Context, login string) (*models.User, error) {
-	var id int64
+	var id int
 	var hashedPassword string
 	var createdAt time.Time
 
@@ -96,6 +96,17 @@ func (s *Storage) SelectUser(ctx context.Context, login string) (*models.User, e
 		HashedPassword: hashedPassword,
 		CreatedAt:      createdAt.Format(time.RFC3339),
 	}, nil
+}
+
+func (s *Storage) GetUserBalance(ctx context.Context, userID int) (float64, error) {
+	var balance float64
+
+	err := s.pool.QueryRow(ctx, "SELECT balance FROM users WHERE id = $1", userID).Scan(&balance)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	return balance, nil
 }
 
 func (s *Storage) Ping(ctx context.Context) error {
