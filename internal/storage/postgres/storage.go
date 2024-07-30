@@ -109,6 +109,36 @@ func (s *Storage) GetUserBalance(ctx context.Context, userID int) (float64, erro
 	return balance, nil
 }
 
+func (s *Storage) CreateOrder(
+	ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error) {
+	query := `
+		WITH ins AS (
+			INSERT INTO orders (user_id, order_number, status)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (order_number) DO NOTHING
+			RETURNING id, user_id, order_number, accrual, status, uploaded_at, true AS is_new
+		)
+		SELECT id, user_id, order_number, accrual, status, uploaded_at, is_new
+		FROM ins
+		UNION ALL
+		SELECT id, user_id, order_number, accrual, status, uploaded_at, false AS is_new
+		FROM orders
+		WHERE order_number = $2
+		LIMIT 1;
+	`
+
+	var order models.Order
+	var isNew bool
+	err := s.pool.QueryRow(ctx, query, userID, orderNumber, status).Scan(
+		&order.ID, &order.UserID, &order.OrderNumber, &order.Accrual, &order.Status, &order.UploadedAt, &isNew,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	return &order, isNew, nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {
