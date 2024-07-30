@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-bondar/gophermart/internal/middleware"
@@ -22,6 +25,7 @@ type Service interface {
 	CreateUser(ctx context.Context, login, password string) error
 	AuthenticateUser(ctx context.Context, login, password string) (string, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	CreateOrder(ctx context.Context, userID int, orderNumber int) (*models.Order, bool, error)
 	Ping(ctx context.Context) error
 }
 
@@ -169,6 +173,64 @@ func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "text/plain" {
+		http.Error(w, "Invalid Content-Type", http.StatusBadRequest)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	orderNumberStr := strings.TrimSpace(string(body))
+	if orderNumberStr == "" {
+		http.Error(w, "Order number is required", http.StatusBadRequest)
+		return
+	}
+
+	orderNumber, err := strconv.Atoi(orderNumberStr)
+	if err != nil {
+		http.Error(w, "Invalid order number format", http.StatusUnprocessableEntity)
+		return
+	}
+
+	userID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	order, isNew, err := h.service.CreateOrder(r.Context(), userID, orderNumber)
+	if err != nil {
+		if errors.Is(err, models.ErrInvalidOrderNumber) {
+			http.Error(w, "Invalid order number", http.StatusUnprocessableEntity)
+			return
+		}
+
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	if order.UserID != userID {
+		http.Error(w, "Order has been already created", http.StatusConflict)
+		return
+	}
+
+	var status = http.StatusAccepted
+
+	if !isNew {
+		status = http.StatusCreated
+	}
+
+	w.WriteHeader(status)
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {

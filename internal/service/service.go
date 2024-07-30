@@ -19,6 +19,7 @@ type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	CreateOrder(ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error)
 	Ping(ctx context.Context) error
 }
 
@@ -34,6 +35,35 @@ func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Servi
 		logger:  logger,
 		cfg:     cfg,
 	}
+}
+
+func validateOrderNumber(number int) error {
+	const doubleDigitThreshold = 9
+	const modValue = 10
+
+	var sum int
+	double := false
+
+	for number > 0 {
+		digit := number % modValue
+		number /= modValue
+
+		if double {
+			digit *= 2
+			if digit > doubleDigitThreshold {
+				digit -= doubleDigitThreshold
+			}
+		}
+
+		sum += digit
+		double = !double
+	}
+
+	if sum%modValue != 0 {
+		return errors.New("invalid order number")
+	}
+
+	return nil
 }
 
 func (s *Service) CreateUser(ctx context.Context, login, password string) error {
@@ -87,6 +117,20 @@ func (s *Service) GetUserBalance(ctx context.Context, userID int) (float64, erro
 	}
 
 	return balance, nil
+}
+
+func (s *Service) CreateOrder(ctx context.Context, userID int, orderNumber int) (*models.Order, bool, error) {
+	err := validateOrderNumber(orderNumber)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %d", models.ErrInvalidOrderNumber, orderNumber)
+	}
+
+	order, isNew, err := s.storage.CreateOrder(ctx, userID, orderNumber, models.OrderStatusNew)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	return order, isNew, nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {
