@@ -35,10 +35,11 @@ func Run() error {
 
 	svc := service.NewService(s, l, cfg)
 	h := handlers.NewHandler(svc, l, cfg)
+	r := router.Router(h, l, cfg)
 
 	l.InfoContext(context.Background(), "Running server", slog.String("address", cfg.RunAddr))
 
-	err = http.ListenAndServe(cfg.RunAddr, router.Router(h, l))
+	err = http.ListenAndServe(cfg.RunAddr, r)
 	if err != nil {
 		if !errors.Is(err, http.ErrServerClosed) {
 			l.ErrorContext(context.Background(), err.Error())

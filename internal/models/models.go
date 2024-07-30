@@ -1,6 +1,10 @@
 package models
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/golang-jwt/jwt/v5"
+)
 
 var (
 	ErrUserDuplicateLogin     = errors.New("user: duplicate login")
@@ -8,11 +12,16 @@ var (
 	ErrUserInvalidCredentials = errors.New("user: invalid credentials")
 )
 
+type Claims struct {
+	jwt.RegisteredClaims
+	UserID int
+}
+
 type User struct {
 	Login          string `json:"login"`
 	HashedPassword string `json:"hashed_password"`
 	CreatedAt      string `json:"created_at"`
-	ID             int64  `json:"id"`
+	ID             int    `json:"id"`
 }
 
 type HandleRegisterUserRequest struct {
@@ -21,3 +30,8 @@ type HandleRegisterUserRequest struct {
 }
 
 type HandleLoginUserRequest = HandleRegisterUserRequest
+
+type HandleUserBalanceResponse struct {
+	Current   float64 `json:"current"`
+	Withdrawn int     `json:"withdrawn"`
+}
