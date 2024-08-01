@@ -14,6 +14,7 @@ type Storage interface {
 	SelectUser(ctx context.Context, login string) (*models.User, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error)
+	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	Ping(ctx context.Context) error
 	Close()
 }

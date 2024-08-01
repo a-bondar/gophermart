@@ -20,6 +20,7 @@ type Storage interface {
 	SelectUser(ctx context.Context, login string) (*models.User, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error)
+	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	Ping(ctx context.Context) error
 }
 
@@ -131,6 +132,29 @@ func (s *Service) CreateOrder(ctx context.Context, userID int, orderNumber int) 
 	}
 
 	return order, isNew, nil
+}
+
+func (s *Service) GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error) {
+	orders, err := s.storage.GetUserOrders(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user orders: %w", err)
+	}
+
+	if len(orders) == 0 {
+		return nil, models.ErrUserHasNoOrders
+	}
+
+	result := make([]models.UserOrderResult, len(orders))
+	for i, order := range orders {
+		result[i] = models.UserOrderResult{
+			OrderNumber: order.OrderNumber,
+			Status:      order.Status,
+			Accrual:     order.Accrual,
+			UploadedAt:  order.UploadedAt,
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {

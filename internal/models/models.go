@@ -12,6 +12,7 @@ var (
 	ErrUserNotFound           = errors.New("user: not found")
 	ErrUserInvalidCredentials = errors.New("user: invalid credentials")
 	ErrInvalidOrderNumber     = errors.New("invalid order number")
+	ErrUserHasNoOrders        = errors.New("user: has no orders")
 )
 
 type Claims struct {
@@ -38,7 +39,7 @@ const (
 type Order struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`
 	Status      OrderStatus `json:"status"`
-	OrderNumber int         `json:"order_number"`
+	OrderNumber int         `json:"number"`
 	UserID      int         `json:"user_id"`
 	ID          int         `json:"id"`
 	Accrual     float64     `json:"accrual"`
@@ -54,4 +55,11 @@ type HandleLoginUserRequest = HandleRegisterUserRequest
 type HandleUserBalanceResponse struct {
 	Current   float64 `json:"current"`
 	Withdrawn int     `json:"withdrawn"`
+}
+
+type UserOrderResult = struct {
+	UploadedAt  time.Time   `json:"uploaded_at"`
+	Status      OrderStatus `json:"status"`
+	OrderNumber int         `json:"number"`
+	Accrual     float64     `json:"accrual"`
 }

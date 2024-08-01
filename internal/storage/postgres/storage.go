@@ -139,6 +139,21 @@ func (s *Storage) CreateOrder(
 	return &order, isNew, nil
 }
 
+func (s *Storage) GetUserOrders(ctx context.Context, userID int) ([]models.Order, error) {
+	query := "SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at ASC"
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query orders: %w", err)
+	}
+
+	orders, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Order])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return orders, nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {
