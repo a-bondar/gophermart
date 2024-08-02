@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +27,7 @@ type Service interface {
 	CreateUser(ctx context.Context, login, password string) error
 	AuthenticateUser(ctx context.Context, login, password string) (string, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
-	CreateOrder(ctx context.Context, userID int, orderNumber int) (*models.Order, bool, error)
+	CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error)
 	Ping(ctx context.Context) error
 }
@@ -192,15 +191,9 @@ func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderNumberStr := strings.TrimSpace(string(body))
-	if orderNumberStr == "" {
+	orderNumber := strings.TrimSpace(string(body))
+	if orderNumber == "" {
 		http.Error(w, "Order number is required", http.StatusBadRequest)
-		return
-	}
-
-	orderNumber, err := strconv.Atoi(orderNumberStr)
-	if err != nil {
-		http.Error(w, "Invalid order number format", http.StatusUnprocessableEntity)
 		return
 	}
 

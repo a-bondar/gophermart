@@ -39,7 +39,7 @@ const (
 type Order struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`
 	Status      OrderStatus `json:"status"`
-	OrderNumber int         `json:"number"`
+	OrderNumber string      `json:"number"`
 	UserID      int         `json:"user_id"`
 	ID          int         `json:"id"`
 	Accrual     float64     `json:"accrual"`
@@ -60,6 +60,6 @@ type HandleUserBalanceResponse struct {
 type UserOrderResult = struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`
 	Status      OrderStatus `json:"status"`
-	OrderNumber int         `json:"number"`
+	OrderNumber string      `json:"number"`
 	Accrual     float64     `json:"accrual"`
 }

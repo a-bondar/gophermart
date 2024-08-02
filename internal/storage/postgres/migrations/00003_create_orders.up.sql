@@ -6,7 +6,7 @@ CREATE TABLE orders
 (
     id           SERIAL PRIMARY KEY,
     user_id      INT                      NOT NULL,
-    order_number BIGINT UNIQUE            NOT NULL,
+    order_number VARCHAR(255) UNIQUE      NOT NULL,
     accrual      NUMERIC(10, 2)           NOT NULL DEFAULT 0 CHECK (accrual >= 0),
     status       order_status             NOT NULL DEFAULT 'NEW',
     uploaded_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
