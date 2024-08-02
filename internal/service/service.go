@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,7 +20,9 @@ type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
-	CreateOrder(ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error)
+	CreateOrder(ctx context.Context, userID int, orderNumber string,
+		status models.OrderStatus) (*models.Order, bool, error)
+	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	Ping(ctx context.Context) error
 }
 
@@ -37,7 +40,12 @@ func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Servi
 	}
 }
 
-func validateOrderNumber(number int) error {
+func validateOrderNumber(orderNumber string) error {
+	number, err := strconv.Atoi(orderNumber)
+	if err != nil {
+		return fmt.Errorf("failed to convert order number to int: %w", err)
+	}
+
 	const doubleDigitThreshold = 9
 	const modValue = 10
 
@@ -119,10 +127,10 @@ func (s *Service) GetUserBalance(ctx context.Context, userID int) (float64, erro
 	return balance, nil
 }
 
-func (s *Service) CreateOrder(ctx context.Context, userID int, orderNumber int) (*models.Order, bool, error) {
+func (s *Service) CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error) {
 	err := validateOrderNumber(orderNumber)
 	if err != nil {
-		return nil, false, fmt.Errorf("%w: %d", models.ErrInvalidOrderNumber, orderNumber)
+		return nil, false, fmt.Errorf("%w: %s", models.ErrInvalidOrderNumber, orderNumber)
 	}
 
 	order, isNew, err := s.storage.CreateOrder(ctx, userID, orderNumber, models.OrderStatusNew)
@@ -131,6 +139,29 @@ func (s *Service) CreateOrder(ctx context.Context, userID int, orderNumber int) 
 	}
 
 	return order, isNew, nil
+}
+
+func (s *Service) GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error) {
+	orders, err := s.storage.GetUserOrders(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user orders: %w", err)
+	}
+
+	if len(orders) == 0 {
+		return nil, models.ErrUserHasNoOrders
+	}
+
+	result := make([]models.UserOrderResult, len(orders))
+	for i, order := range orders {
+		result[i] = models.UserOrderResult{
+			OrderNumber: order.OrderNumber,
+			Status:      order.Status,
+			Accrual:     order.Accrual,
+			UploadedAt:  order.UploadedAt,
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {

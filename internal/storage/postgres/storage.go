@@ -110,7 +110,7 @@ func (s *Storage) GetUserBalance(ctx context.Context, userID int) (float64, erro
 }
 
 func (s *Storage) CreateOrder(
-	ctx context.Context, userID int, orderNumber int, status models.OrderStatus) (*models.Order, bool, error) {
+	ctx context.Context, userID int, orderNumber string, status models.OrderStatus) (*models.Order, bool, error) {
 	query := `
 		WITH ins AS (
 			INSERT INTO orders (user_id, order_number, status)
@@ -137,6 +137,21 @@ func (s *Storage) CreateOrder(
 	}
 
 	return &order, isNew, nil
+}
+
+func (s *Storage) GetUserOrders(ctx context.Context, userID int) ([]models.Order, error) {
+	query := "SELECT * FROM orders WHERE user_id = $1 ORDER BY uploaded_at"
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query orders: %w", err)
+	}
+
+	orders, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Order])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return orders, nil
 }
 
 func (s *Storage) Ping(ctx context.Context) error {

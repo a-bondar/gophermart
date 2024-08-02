@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,13 +18,17 @@ import (
 	"github.com/a-bondar/gophermart/internal/models"
 )
 
-const missingRequiredFields = "Missing required fields: login or password"
+const (
+	missingRequiredFields = "Missing required fields: login or password"
+	ContentType           = "Content-Type"
+)
 
 type Service interface {
 	CreateUser(ctx context.Context, login, password string) error
 	AuthenticateUser(ctx context.Context, login, password string) (string, error)
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
-	CreateOrder(ctx context.Context, userID int, orderNumber int) (*models.Order, bool, error)
+	CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error)
+	GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error)
 	Ping(ctx context.Context) error
 }
 
@@ -162,7 +165,7 @@ func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(ContentType, "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	// @TODO: add withdrawn
@@ -176,7 +179,7 @@ func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "text/plain" {
+	if r.Header.Get(ContentType) != "text/plain" {
 		http.Error(w, "Invalid Content-Type", http.StatusBadRequest)
 		return
 	}
@@ -188,15 +191,9 @@ func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderNumberStr := strings.TrimSpace(string(body))
-	if orderNumberStr == "" {
+	orderNumber := strings.TrimSpace(string(body))
+	if orderNumber == "" {
 		http.Error(w, "Order number is required", http.StatusBadRequest)
-		return
-	}
-
-	orderNumber, err := strconv.Atoi(orderNumberStr)
-	if err != nil {
-		http.Error(w, "Invalid order number format", http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -227,10 +224,40 @@ func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
 	var status = http.StatusAccepted
 
 	if !isNew {
-		status = http.StatusCreated
+		status = http.StatusOK
 	}
 
 	w.WriteHeader(status)
+}
+
+func (h *Handler) HandleGetUserOrders(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	orders, err := h.service.GetUserOrders(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, models.ErrUserHasNoOrders) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set(ContentType, "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err = json.NewEncoder(w).Encode(orders); err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +268,7 @@ func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(ContentType, "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	if _, err = w.Write([]byte(`{"status": "ok"}`)); err != nil {
