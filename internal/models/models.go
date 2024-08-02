@@ -13,6 +13,7 @@ var (
 	ErrUserInvalidCredentials = errors.New("user: invalid credentials")
 	ErrInvalidOrderNumber     = errors.New("invalid order number")
 	ErrUserHasNoOrders        = errors.New("user: has no orders")
+	ErrUserHasNoWithdrawals   = errors.New("user: has no withdrawals")
 )
 
 type Claims struct {
@@ -62,4 +63,18 @@ type UserOrderResult = struct {
 	Status      OrderStatus `json:"status"`
 	OrderNumber string      `json:"number"`
 	Accrual     float64     `json:"accrual"`
+}
+
+type Withdrawal struct {
+	ProcessedAt time.Time `json:"processed_at"`
+	OrderNumber string    `json:"order_number"`
+	ID          int       `json:"id"`
+	UserID      int       `json:"user_id"`
+	Sum         float64   `json:"sum"`
+}
+
+type UserWithdrawalResult = struct {
+	ProcessedAt time.Time `json:"processed_at"`
+	Order       string    `json:"order"`
+	Sum         float64   `json:"sum"`
 }

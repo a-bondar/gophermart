@@ -154,6 +154,21 @@ func (s *Storage) GetUserOrders(ctx context.Context, userID int) ([]models.Order
 	return orders, nil
 }
 
+func (s *Storage) GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error) {
+	query := "SELECT * FROM withdrawals WHERE user_id = $1 ORDER BY processed_at"
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query withdrawals: %w", err)
+	}
+
+	withdrawals, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Withdrawal])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return withdrawals, nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {

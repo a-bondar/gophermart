@@ -23,6 +23,7 @@ type Storage interface {
 	CreateOrder(ctx context.Context, userID int, orderNumber string,
 		status models.OrderStatus) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
+	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
 	Ping(ctx context.Context) error
 }
 
@@ -158,6 +159,28 @@ func (s *Service) GetUserOrders(ctx context.Context, userID int) ([]models.UserO
 			Status:      order.Status,
 			Accrual:     order.Accrual,
 			UploadedAt:  order.UploadedAt,
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error) {
+	withdrawals, err := s.storage.GetUserWithdrawals(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user withdrawals: %w", err)
+	}
+
+	if len(withdrawals) == 0 {
+		return nil, models.ErrUserHasNoWithdrawals
+	}
+
+	result := make([]models.UserWithdrawalResult, len(withdrawals))
+	for i, withdrawal := range withdrawals {
+		result[i] = models.UserWithdrawalResult{
+			Order:       withdrawal.OrderNumber,
+			Sum:         withdrawal.Sum,
+			ProcessedAt: withdrawal.ProcessedAt,
 		}
 	}
 

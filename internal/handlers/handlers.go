@@ -21,6 +21,7 @@ import (
 const (
 	missingRequiredFields = "Missing required fields: login or password"
 	ContentType           = "Content-Type"
+	ApplicationJSON       = "application/json"
 )
 
 type Service interface {
@@ -29,6 +30,7 @@ type Service interface {
 	GetUserBalance(ctx context.Context, userID int) (float64, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error)
+	GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error)
 	Ping(ctx context.Context) error
 }
 
@@ -165,7 +167,7 @@ func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set(ContentType, "application/json")
+	w.Header().Set(ContentType, ApplicationJSON)
 	w.WriteHeader(http.StatusOK)
 
 	// @TODO: add withdrawn
@@ -230,34 +232,60 @@ func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status)
 }
 
-func (h *Handler) HandleGetUserOrders(w http.ResponseWriter, r *http.Request) {
+func handleUserResponse[T any](
+	w http.ResponseWriter,
+	r *http.Request,
+	getDataFunc func(ctx context.Context, userID int) ([]T, error),
+	noDataErr error,
+	logger *slog.Logger,
+) {
 	userID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
+		logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
-	orders, err := h.service.GetUserOrders(r.Context(), userID)
+	data, err := getDataFunc(r.Context(), userID)
 	if err != nil {
-		if errors.Is(err, models.ErrUserHasNoOrders) {
+		if errors.Is(err, noDataErr) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
+		logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set(ContentType, "application/json")
+	w.Header().Set(ContentType, ApplicationJSON)
 	w.WriteHeader(http.StatusOK)
 
-	if err = json.NewEncoder(w).Encode(orders); err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
+	if err = json.NewEncoder(w).Encode(data); err != nil {
+		logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "Failed to encode data", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h *Handler) HandleGetUserOrders(w http.ResponseWriter, r *http.Request) {
+	handleUserResponse[models.UserOrderResult](
+		w,
+		r,
+		h.service.GetUserOrders,
+		models.ErrUserHasNoOrders,
+		h.logger,
+	)
+}
+
+func (h *Handler) HandleGetUserWithdrawals(w http.ResponseWriter, r *http.Request) {
+	handleUserResponse[models.UserWithdrawalResult](
+		w,
+		r,
+		h.service.GetUserWithdrawals,
+		models.ErrUserHasNoWithdrawals,
+		h.logger,
+	)
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +296,7 @@ func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set(ContentType, "application/json")
+	w.Header().Set(ContentType, ApplicationJSON)
 	w.WriteHeader(http.StatusOK)
 
 	if _, err = w.Write([]byte(`{"status": "ok"}`)); err != nil {
