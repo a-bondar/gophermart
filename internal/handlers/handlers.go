@@ -224,7 +224,7 @@ func (h *Handler) HandlePostUserOrders(w http.ResponseWriter, r *http.Request) {
 	var status = http.StatusAccepted
 
 	if !isNew {
-		status = http.StatusCreated
+		status = http.StatusOK
 	}
 
 	w.WriteHeader(status)
