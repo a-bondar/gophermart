@@ -238,10 +238,30 @@ func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumb
 
 func (s *Storage) UpdateOrder(ctx context.Context,
 	orderNumber string, status models.OrderStatus, accrual float64) error {
-	query := "UPDATE orders SET status = $1, accrual = $2 WHERE order_number = $3"
-	_, err := s.pool.Exec(ctx, query, status, accrual, orderNumber)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			err = tx.Rollback(ctx)
+		} else {
+			err = tx.Commit(ctx)
+		}
+	}()
+
+	updateOrderQuery := "UPDATE orders SET status = $1, accrual = $2 WHERE order_number = $3 RETURNING user_id"
+	var userID int
+	err = tx.QueryRow(ctx, updateOrderQuery, status, accrual, orderNumber).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("failed to update order status: %w", err)
+	}
+
+	updateBalanceQuery := "UPDATE users SET balance = balance + $1 WHERE id = $2"
+	_, err = tx.Exec(ctx, updateBalanceQuery, accrual, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update user balance: %w", err)
 	}
 
 	return nil
