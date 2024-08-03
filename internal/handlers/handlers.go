@@ -31,6 +31,7 @@ type Service interface {
 	CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error)
 	GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error)
+	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
 	Ping(ctx context.Context) error
 }
 
@@ -286,6 +287,56 @@ func (h *Handler) HandleGetUserWithdrawals(w http.ResponseWriter, r *http.Reques
 		models.ErrUserHasNoWithdrawals,
 		h.logger,
 	)
+}
+
+func (h *Handler) HandleUserWithdraw(w http.ResponseWriter, r *http.Request) {
+	var request models.HandleUserWithdrawRequest
+	var buf bytes.Buffer
+
+	_, err := buf.ReadFrom(r.Body)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	err = json.Unmarshal(buf.Bytes(), &request)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	if request.Order == "" || request.Sum <= 0 {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	userID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	err = h.service.UserWithdrawBonuses(r.Context(), userID, request.Order, request.Sum)
+	if err != nil {
+		if errors.Is(err, models.ErrInvalidOrderNumber) {
+			http.Error(w, "Invalid order number", http.StatusUnprocessableEntity)
+			return
+		}
+
+		if errors.Is(err, models.ErrUserInsufficientFunds) {
+			http.Error(w, "Not enough bonuses", http.StatusPaymentRequired)
+			return
+		}
+
+		h.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {

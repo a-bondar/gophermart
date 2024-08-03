@@ -14,6 +14,7 @@ var (
 	ErrInvalidOrderNumber     = errors.New("invalid order number")
 	ErrUserHasNoOrders        = errors.New("user: has no orders")
 	ErrUserHasNoWithdrawals   = errors.New("user: has no withdrawals")
+	ErrUserInsufficientFunds  = errors.New("user: not enough bonuses")
 )
 
 type Claims struct {
@@ -77,4 +78,9 @@ type UserWithdrawalResult = struct {
 	ProcessedAt time.Time `json:"processed_at"`
 	Order       string    `json:"order"`
 	Sum         float64   `json:"sum"`
+}
+
+type HandleUserWithdrawRequest = struct {
+	Order string  `json:"order"`
+	Sum   float64 `json:"sum"`
 }

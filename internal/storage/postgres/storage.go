@@ -169,6 +169,66 @@ func (s *Storage) GetUserWithdrawals(ctx context.Context, userID int) ([]models.
 	return withdrawals, nil
 }
 
+func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
+	var orderExists bool
+	existsQuery := `
+		SELECT EXISTS (
+			SELECT 1 FROM orders WHERE order_number = $1 AND user_id = $2
+	 	)
+	`
+	err := s.pool.QueryRow(ctx, existsQuery, orderNumber, userID).Scan(&orderExists)
+	if err != nil {
+		return fmt.Errorf("failed to query order: %w", err)
+	}
+	if !orderExists {
+		return models.ErrInvalidOrderNumber
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			err = tx.Rollback(ctx)
+		}
+	}()
+
+	updateQuery := `
+		UPDATE users
+		SET balance = balance - $1
+		WHERE id = $2
+	`
+	_, err = tx.Exec(ctx, updateQuery, sum, userID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == pgerrcode.CheckViolation {
+				return models.ErrUserInsufficientFunds
+			}
+		}
+
+		return fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	insertQuery := `
+		INSERT INTO withdrawals (user_id, sum, order_number)
+		VALUES ($1, $2, $3)
+	`
+	_, err = tx.Exec(ctx, insertQuery, userID, sum, orderNumber)
+	if err != nil {
+		return fmt.Errorf("failed to insert withdrawal: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {

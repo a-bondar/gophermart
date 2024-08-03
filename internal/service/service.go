@@ -24,6 +24,7 @@ type Storage interface {
 		status models.OrderStatus) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
+	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
 	Ping(ctx context.Context) error
 }
 
@@ -185,6 +186,20 @@ func (s *Service) GetUserWithdrawals(ctx context.Context, userID int) ([]models.
 	}
 
 	return result, nil
+}
+
+func (s *Service) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
+	err := validateOrderNumber(orderNumber)
+	if err != nil {
+		return fmt.Errorf("%w: %s", models.ErrInvalidOrderNumber, orderNumber)
+	}
+
+	err = s.storage.UserWithdrawBonuses(ctx, userID, orderNumber, sum)
+	if err != nil {
+		return fmt.Errorf("failed to withdraw bonuses: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {
