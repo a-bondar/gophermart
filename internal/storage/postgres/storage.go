@@ -98,12 +98,19 @@ func (s *Storage) SelectUser(ctx context.Context, login string) (*models.User, e
 	}, nil
 }
 
-func (s *Storage) GetUserBalance(ctx context.Context, userID int) (float64, error) {
-	var balance float64
-
-	err := s.pool.QueryRow(ctx, "SELECT balance FROM users WHERE id = $1", userID).Scan(&balance)
+func (s *Storage) GetUserBalance(ctx context.Context, userID int) (*models.Balance, error) {
+	balance := &models.Balance{}
+	query := `
+		SELECT u.balance,
+		   	(SELECT COALESCE(SUM(w.sum), 0) 
+		   	 FROM withdrawals w 
+		   	 WHERE w.user_id = u.id) AS withdrawn
+		FROM users u
+		WHERE u.id = $1
+	`
+	err := s.pool.QueryRow(ctx, query, userID).Scan(&balance.Current, &balance.Withdrawn)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get user balance: %w", err)
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 
 	return balance, nil

@@ -27,7 +27,7 @@ const (
 type Service interface {
 	CreateUser(ctx context.Context, login, password string) error
 	AuthenticateUser(ctx context.Context, login, password string) (string, error)
-	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	GetUserBalance(ctx context.Context, userID int) (*models.Balance, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error)
 	GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error)
@@ -171,10 +171,7 @@ func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(ContentType, ApplicationJSON)
 	w.WriteHeader(http.StatusOK)
 
-	// @TODO: add withdrawn
-	response := models.HandleUserBalanceResponse{Current: balance, Withdrawn: 0}
-
-	if err = json.NewEncoder(w).Encode(response); err != nil {
+	if err = json.NewEncoder(w).Encode(balance); err != nil {
 		h.logger.ErrorContext(r.Context(), err.Error())
 		http.Error(w, "", http.StatusInternalServerError)
 		return

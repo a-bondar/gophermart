@@ -54,11 +54,6 @@ type HandleRegisterUserRequest struct {
 
 type HandleLoginUserRequest = HandleRegisterUserRequest
 
-type HandleUserBalanceResponse struct {
-	Current   float64 `json:"current"`
-	Withdrawn int     `json:"withdrawn"`
-}
-
 type UserOrderResult = struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`
 	Status      OrderStatus `json:"status"`
@@ -83,4 +78,9 @@ type UserWithdrawalResult = struct {
 type HandleUserWithdrawRequest = struct {
 	Order string  `json:"order"`
 	Sum   float64 `json:"sum"`
+}
+
+type Balance struct {
+	Current   float64 `json:"current"`
+	Withdrawn int     `json:"withdrawn"`
 }

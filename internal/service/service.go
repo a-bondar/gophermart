@@ -19,7 +19,7 @@ import (
 type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
-	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	GetUserBalance(ctx context.Context, userID int) (*models.Balance, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber string,
 		status models.OrderStatus) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
@@ -120,10 +120,10 @@ func (s *Service) AuthenticateUser(ctx context.Context, login, password string) 
 	return tokenString, nil
 }
 
-func (s *Service) GetUserBalance(ctx context.Context, userID int) (float64, error) {
+func (s *Service) GetUserBalance(ctx context.Context, userID int) (*models.Balance, error) {
 	balance, err := s.storage.GetUserBalance(ctx, userID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get user balance: %w", err)
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 
 	return balance, nil
