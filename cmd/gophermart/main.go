@@ -7,9 +7,6 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/a-bondar/gophermart/internal/config"
 	"github.com/a-bondar/gophermart/internal/handlers"
@@ -31,15 +28,6 @@ func Run() error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigs
-		l.InfoContext(ctx, "shutting down gracefully", slog.String("signal", sig.String()))
-		cancel()
-	}()
 
 	s, err := storage.NewStorage(ctx, cfg.DatabaseURI)
 	if err != nil {
