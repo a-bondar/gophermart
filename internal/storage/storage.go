@@ -12,10 +12,12 @@ import (
 type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
-	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	GetUserBalance(ctx context.Context, userID int) (*models.Balance, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber string,
 		status models.OrderStatus) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
+	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
+	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
 	Ping(ctx context.Context) error
 	Close()
 }

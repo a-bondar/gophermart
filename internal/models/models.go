@@ -13,6 +13,8 @@ var (
 	ErrUserInvalidCredentials = errors.New("user: invalid credentials")
 	ErrInvalidOrderNumber     = errors.New("invalid order number")
 	ErrUserHasNoOrders        = errors.New("user: has no orders")
+	ErrUserHasNoWithdrawals   = errors.New("user: has no withdrawals")
+	ErrUserInsufficientFunds  = errors.New("user: not enough bonuses")
 )
 
 type Claims struct {
@@ -52,14 +54,33 @@ type HandleRegisterUserRequest struct {
 
 type HandleLoginUserRequest = HandleRegisterUserRequest
 
-type HandleUserBalanceResponse struct {
-	Current   float64 `json:"current"`
-	Withdrawn int     `json:"withdrawn"`
-}
-
 type UserOrderResult = struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`
 	Status      OrderStatus `json:"status"`
 	OrderNumber string      `json:"number"`
 	Accrual     float64     `json:"accrual"`
+}
+
+type Withdrawal struct {
+	ProcessedAt time.Time `json:"processed_at"`
+	OrderNumber string    `json:"order_number"`
+	ID          int       `json:"id"`
+	UserID      int       `json:"user_id"`
+	Sum         float64   `json:"sum"`
+}
+
+type UserWithdrawalResult = struct {
+	ProcessedAt time.Time `json:"processed_at"`
+	Order       string    `json:"order"`
+	Sum         float64   `json:"sum"`
+}
+
+type HandleUserWithdrawRequest = struct {
+	Order string  `json:"order"`
+	Sum   float64 `json:"sum"`
+}
+
+type Balance struct {
+	Current   float64 `json:"current"`
+	Withdrawn int     `json:"withdrawn"`
 }

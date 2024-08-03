@@ -98,12 +98,19 @@ func (s *Storage) SelectUser(ctx context.Context, login string) (*models.User, e
 	}, nil
 }
 
-func (s *Storage) GetUserBalance(ctx context.Context, userID int) (float64, error) {
-	var balance float64
-
-	err := s.pool.QueryRow(ctx, "SELECT balance FROM users WHERE id = $1", userID).Scan(&balance)
+func (s *Storage) GetUserBalance(ctx context.Context, userID int) (*models.Balance, error) {
+	balance := &models.Balance{}
+	query := `
+		SELECT u.balance,
+		   	(SELECT COALESCE(SUM(w.sum), 0) 
+		   	 FROM withdrawals w 
+		   	 WHERE w.user_id = u.id) AS withdrawn
+		FROM users u
+		WHERE u.id = $1
+	`
+	err := s.pool.QueryRow(ctx, query, userID).Scan(&balance.Current, &balance.Withdrawn)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get user balance: %w", err)
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 
 	return balance, nil
@@ -152,6 +159,81 @@ func (s *Storage) GetUserOrders(ctx context.Context, userID int) ([]models.Order
 	}
 
 	return orders, nil
+}
+
+func (s *Storage) GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error) {
+	query := "SELECT * FROM withdrawals WHERE user_id = $1 ORDER BY processed_at"
+	rows, err := s.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query withdrawals: %w", err)
+	}
+
+	withdrawals, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Withdrawal])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return withdrawals, nil
+}
+
+func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
+	var orderExists bool
+	existsQuery := `
+		SELECT EXISTS (
+			SELECT 1 FROM orders WHERE order_number = $1 AND user_id = $2
+	 	)
+	`
+	err := s.pool.QueryRow(ctx, existsQuery, orderNumber, userID).Scan(&orderExists)
+	if err != nil {
+		return fmt.Errorf("failed to query order: %w", err)
+	}
+	if !orderExists {
+		return models.ErrInvalidOrderNumber
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			err = tx.Rollback(ctx)
+		}
+	}()
+
+	updateQuery := `
+		UPDATE users
+		SET balance = balance - $1
+		WHERE id = $2
+	`
+	_, err = tx.Exec(ctx, updateQuery, sum, userID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == pgerrcode.CheckViolation {
+				return models.ErrUserInsufficientFunds
+			}
+		}
+
+		return fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	insertQuery := `
+		INSERT INTO withdrawals (user_id, sum, order_number)
+		VALUES ($1, $2, $3)
+	`
+	_, err = tx.Exec(ctx, insertQuery, userID, sum, orderNumber)
+	if err != nil {
+		return fmt.Errorf("failed to insert withdrawal: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Storage) Ping(ctx context.Context) error {

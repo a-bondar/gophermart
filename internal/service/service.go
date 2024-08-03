@@ -19,10 +19,12 @@ import (
 type Storage interface {
 	CreateUser(ctx context.Context, login string, hashedPassword []byte) error
 	SelectUser(ctx context.Context, login string) (*models.User, error)
-	GetUserBalance(ctx context.Context, userID int) (float64, error)
+	GetUserBalance(ctx context.Context, userID int) (*models.Balance, error)
 	CreateOrder(ctx context.Context, userID int, orderNumber string,
 		status models.OrderStatus) (*models.Order, bool, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
+	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
+	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
 	Ping(ctx context.Context) error
 }
 
@@ -118,10 +120,10 @@ func (s *Service) AuthenticateUser(ctx context.Context, login, password string) 
 	return tokenString, nil
 }
 
-func (s *Service) GetUserBalance(ctx context.Context, userID int) (float64, error) {
+func (s *Service) GetUserBalance(ctx context.Context, userID int) (*models.Balance, error) {
 	balance, err := s.storage.GetUserBalance(ctx, userID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get user balance: %w", err)
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 
 	return balance, nil
@@ -162,6 +164,42 @@ func (s *Service) GetUserOrders(ctx context.Context, userID int) ([]models.UserO
 	}
 
 	return result, nil
+}
+
+func (s *Service) GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error) {
+	withdrawals, err := s.storage.GetUserWithdrawals(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user withdrawals: %w", err)
+	}
+
+	if len(withdrawals) == 0 {
+		return nil, models.ErrUserHasNoWithdrawals
+	}
+
+	result := make([]models.UserWithdrawalResult, len(withdrawals))
+	for i, withdrawal := range withdrawals {
+		result[i] = models.UserWithdrawalResult{
+			Order:       withdrawal.OrderNumber,
+			Sum:         withdrawal.Sum,
+			ProcessedAt: withdrawal.ProcessedAt,
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
+	err := validateOrderNumber(orderNumber)
+	if err != nil {
+		return fmt.Errorf("%w: %s", models.ErrInvalidOrderNumber, orderNumber)
+	}
+
+	err = s.storage.UserWithdrawBonuses(ctx, userID, orderNumber, sum)
+	if err != nil {
+		return fmt.Errorf("failed to withdraw bonuses: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {
