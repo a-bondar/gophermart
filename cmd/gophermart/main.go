@@ -7,6 +7,9 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/a-bondar/gophermart/internal/config"
 	"github.com/a-bondar/gophermart/internal/handlers"
@@ -26,23 +29,37 @@ func Run() error {
 	cfg := config.NewConfig()
 	l := logger.NewLogger()
 
-	s, err := storage.NewStorage(context.Background(), cfg.DatabaseURI)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		l.InfoContext(ctx, "shutting down gracefully", slog.String("signal", sig.String()))
+		cancel()
+	}()
+
+	s, err := storage.NewStorage(ctx, cfg.DatabaseURI)
 	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
-
 	defer s.Close()
 
 	svc := service.NewService(s, l, cfg)
 	h := handlers.NewHandler(svc, l, cfg)
 	r := router.Router(h, l, cfg)
 
-	l.InfoContext(context.Background(), "Running server", slog.String("address", cfg.RunAddr))
+	svc.StartOrderAccrualStatusJob(ctx)
+	defer svc.StopOrderAccrualStatusJob()
+
+	l.InfoContext(ctx, "Running server", slog.String("address", cfg.RunAddr))
 
 	err = http.ListenAndServe(cfg.RunAddr, r)
 	if err != nil {
 		if !errors.Is(err, http.ErrServerClosed) {
-			l.ErrorContext(context.Background(), err.Error())
+			l.ErrorContext(ctx, err.Error())
 
 			return fmt.Errorf("HTTP server has encountered an error: %w", err)
 		}

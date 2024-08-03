@@ -18,6 +18,8 @@ type Storage interface {
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
 	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
+	UpdateOrder(ctx context.Context, orderNumber string, status models.OrderStatus, accrual float64) error
+	GetPendingOrders(ctx context.Context) ([]models.Order, error)
 	Ping(ctx context.Context) error
 	Close()
 }

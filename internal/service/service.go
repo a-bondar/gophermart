@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -25,22 +29,31 @@ type Storage interface {
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	GetUserWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error)
 	UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error
+	UpdateOrder(ctx context.Context, orderNumber string, status models.OrderStatus, accrual float64) error
+	GetPendingOrders(ctx context.Context) ([]models.Order, error)
 	Ping(ctx context.Context) error
 }
 
 type Service struct {
-	storage Storage
-	logger  *slog.Logger
-	cfg     *config.Config
+	storage    Storage
+	logger     *slog.Logger
+	cfg        *config.Config
+	httpClient *http.Client
+	ticker     *time.Ticker
+	sleepUntil int64
 }
 
 func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Service {
 	return &Service{
-		storage: storage,
-		logger:  logger,
-		cfg:     cfg,
+		storage:    storage,
+		logger:     logger,
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: HTTPClientTimeout},
 	}
 }
+
+const CheckOrderAccrualStatusInterval = 10 * time.Second
+const HTTPClientTimeout = 5 * time.Second
 
 func validateOrderNumber(orderNumber string) error {
 	number, err := strconv.Atoi(orderNumber)
@@ -209,4 +222,99 @@ func (s *Service) Ping(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
+	requestURL, err := url.JoinPath(s.cfg.AccrualSystemAddress, "api/orders", orderNumber)
+	if err != nil {
+		return fmt.Errorf("failed to join URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, http.NoBody)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			s.logger.ErrorContext(ctx, err.Error())
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var orderUpdate models.AccrualServiceResponse
+		if err = json.NewDecoder(resp.Body).Decode(&orderUpdate); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		err = s.storage.UpdateOrder(ctx, orderNumber, orderUpdate.Status, orderUpdate.Accrual)
+		if err != nil {
+			return fmt.Errorf("failed to update order: %w", err)
+		}
+	case http.StatusTooManyRequests:
+		retryAfter := resp.Header.Get("Retry-After")
+		if retryAfter != "" {
+			duration, err := strconv.Atoi(retryAfter)
+			if err == nil {
+				atomic.StoreInt64(&s.sleepUntil, time.Now().Add(time.Duration(duration)*time.Second).Unix())
+				s.logger.WarnContext(ctx, "Rate limited, pausing updates", slog.Int("retryAfterSeconds", duration))
+			}
+		}
+	case http.StatusNoContent:
+		s.logger.WarnContext(ctx, "Order not found", slog.String("orderNumber", orderNumber))
+	case http.StatusInternalServerError:
+		s.logger.WarnContext(ctx, "Internal server error from external service")
+	default:
+		s.logger.WarnContext(ctx, "Unexpected status from external service", slog.Int("status", resp.StatusCode))
+	}
+
+	return nil
+}
+
+func (s *Service) updateOrderStatuses(ctx context.Context) {
+	orders, err := s.storage.GetPendingOrders(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, err.Error())
+		return
+	}
+
+	for _, order := range orders {
+		err = s.processOrder(ctx, order.OrderNumber)
+		if err != nil {
+			s.logger.ErrorContext(ctx, err.Error(), slog.String("orderNumber", order.OrderNumber))
+		}
+	}
+}
+
+func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
+	s.ticker = time.NewTicker(CheckOrderAccrualStatusInterval)
+
+	go func() {
+		for {
+			select {
+			case <-s.ticker.C:
+				if time.Now().Before(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)) {
+					s.logger.InfoContext(ctx,
+						"Sleeping due to rate limit", slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
+					continue
+				}
+
+				s.updateOrderStatuses(ctx)
+			case <-ctx.Done():
+				s.logger.InfoContext(ctx, "Check Accrual Order Status job stopped")
+				return
+			}
+		}
+	}()
+}
+
+func (s *Service) StopOrderAccrualStatusJob() {
+	s.ticker.Stop()
 }

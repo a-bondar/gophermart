@@ -84,3 +84,9 @@ type Balance struct {
 	Current   float64 `json:"current"`
 	Withdrawn int     `json:"withdrawn"`
 }
+
+type AccrualServiceResponse struct {
+	Order   string      `json:"order"`
+	Status  OrderStatus `json:"status"`
+	Accrual float64     `json:"accrual"`
+}

@@ -236,6 +236,32 @@ func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumb
 	return nil
 }
 
+func (s *Storage) UpdateOrder(ctx context.Context,
+	orderNumber string, status models.OrderStatus, accrual float64) error {
+	query := "UPDATE orders SET status = $1, accrual = $2 WHERE order_number = $3"
+	_, err := s.pool.Exec(ctx, query, status, accrual, orderNumber)
+	if err != nil {
+		return fmt.Errorf("failed to update order status: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Storage) GetPendingOrders(ctx context.Context) ([]models.Order, error) {
+	query := "SELECT * FROM orders WHERE status IN ($1, $2)"
+	rows, err := s.pool.Query(ctx, query, models.OrderStatusNew, models.OrderStatusProcessing)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query orders: %w", err)
+	}
+
+	orders, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Order])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return orders, nil
+}
+
 func (s *Storage) Ping(ctx context.Context) error {
 	err := s.pool.Ping(ctx)
 	if err != nil {
