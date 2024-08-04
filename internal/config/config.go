@@ -19,7 +19,7 @@ func NewConfig() *Config {
 
 	flag.StringVar(&config.RunAddr, "a", ":8080", "address and port to run server")
 	flag.StringVar(&config.DatabaseURI, "d", "", "database URI")
-	flag.StringVar(&config.AccrualSystemAddress, "r", ":8090", "accrual system address")
+	flag.StringVar(&config.AccrualSystemAddress, "r", "http://localhost:8090", "accrual system address")
 	flag.StringVar(&config.JWTSecret, "j", "", "JWT secret")
 	flag.DurationVar(&config.JWTExp, "e", time.Hour, "JWT expiration time")
 	flag.Parse()

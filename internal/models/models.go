@@ -82,5 +82,11 @@ type HandleUserWithdrawRequest = struct {
 
 type Balance struct {
 	Current   float64 `json:"current"`
-	Withdrawn int     `json:"withdrawn"`
+	Withdrawn float64 `json:"withdrawn"`
+}
+
+type AccrualServiceResponse struct {
+	Order   string      `json:"order"`
+	Status  OrderStatus `json:"status"`
+	Accrual float64     `json:"accrual"`
 }

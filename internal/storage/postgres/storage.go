@@ -177,20 +177,6 @@ func (s *Storage) GetUserWithdrawals(ctx context.Context, userID int) ([]models.
 }
 
 func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
-	var orderExists bool
-	existsQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM orders WHERE order_number = $1 AND user_id = $2
-	 	)
-	`
-	err := s.pool.QueryRow(ctx, existsQuery, orderNumber, userID).Scan(&orderExists)
-	if err != nil {
-		return fmt.Errorf("failed to query order: %w", err)
-	}
-	if !orderExists {
-		return models.ErrInvalidOrderNumber
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -234,6 +220,52 @@ func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumb
 	}
 
 	return nil
+}
+
+func (s *Storage) UpdateOrder(ctx context.Context,
+	orderNumber string, status models.OrderStatus, accrual float64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			err = tx.Rollback(ctx)
+		} else {
+			err = tx.Commit(ctx)
+		}
+	}()
+
+	updateOrderQuery := "UPDATE orders SET status = $1, accrual = $2 WHERE order_number = $3 RETURNING user_id"
+	var userID int
+	err = tx.QueryRow(ctx, updateOrderQuery, status, accrual, orderNumber).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("failed to update order status: %w", err)
+	}
+
+	updateBalanceQuery := "UPDATE users SET balance = balance + $1 WHERE id = $2"
+	_, err = tx.Exec(ctx, updateBalanceQuery, accrual, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Storage) GetPendingOrders(ctx context.Context) ([]models.Order, error) {
+	query := "SELECT * FROM orders WHERE status IN ($1, $2)"
+	rows, err := s.pool.Query(ctx, query, models.OrderStatusNew, models.OrderStatusProcessing)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query orders: %w", err)
+	}
+
+	orders, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Order])
+	if err != nil {
+		return nil, fmt.Errorf("unable to collect rows: %w", err)
+	}
+
+	return orders, nil
 }
 
 func (s *Storage) Ping(ctx context.Context) error {

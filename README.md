@@ -33,7 +33,8 @@ Here are the environment variables you can set in your `.env` file and what they
 - `RUN_PORT`: The port on which the service will run (default is `8080`).
 - `RUN_ADDRESS`: The address and port the service will bind to, set to `:${RUN_PORT}` by default.
 - `ACCRUAL_SYSTEM_PORT`: The port on which the accrual service will run (default is `8081`).
-- `ACCRUAL_SYSTEM_ADDRESS`: The address and port the accrual service will bind to, set to `:${ACCRUAL_SYSTEM_PORT}` by default.
+- `ACCRUAL_SYSTEM_ADDRESS`: The address of the accrual service which will be used by http requests inside main app, set to `http://accrual:${ACCRUAL_SYSTEM_PORT}` by default.
+- `ACCRUAL_RUN_ADDRESS`: The address and port the accrual service will bind to, set to `:${ACCRUAL_SYSTEM_PORT}` by default.
 - `DB_PORT`: The port on which the PostgreSQL database will run (default is `5432`).
 - `DB_USER`: The username for accessing the PostgreSQL database.
 - `DB_PASSWORD`: The password for the PostgreSQL database user.
