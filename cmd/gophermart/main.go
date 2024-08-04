@@ -7,6 +7,10 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/a-bondar/gophermart/internal/config"
 	"github.com/a-bondar/gophermart/internal/handlers"
@@ -15,6 +19,8 @@ import (
 	"github.com/a-bondar/gophermart/internal/service"
 	"github.com/a-bondar/gophermart/internal/storage"
 )
+
+const serverShutdownTimeout = 5 * time.Second
 
 func main() {
 	if err := Run(); err != nil {
@@ -29,8 +35,18 @@ func Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		l.InfoContext(ctx, "Shutting down gracefully", slog.String("signal", sig.String()))
+		cancel()
+	}()
+
 	s, err := storage.NewStorage(ctx, cfg.DatabaseURI)
 	if err != nil {
+		l.ErrorContext(ctx, fmt.Sprintf("failed to initialize storage: %v", err))
 		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 	defer s.Close()
@@ -42,15 +58,27 @@ func Run() error {
 	svc.StartOrderAccrualStatusJob(ctx)
 	defer svc.StopOrderAccrualStatusJob()
 
-	l.InfoContext(ctx, "Running server", slog.String("address", cfg.RunAddr))
+	server := &http.Server{
+		Addr:    cfg.RunAddr,
+		Handler: r,
+	}
 
-	err = http.ListenAndServe(cfg.RunAddr, r)
-	if err != nil {
-		if !errors.Is(err, http.ErrServerClosed) {
-			l.ErrorContext(ctx, err.Error())
-
-			return fmt.Errorf("HTTP server has encountered an error: %w", err)
+	go func() {
+		l.InfoContext(ctx, "Running server", slog.String("address", cfg.RunAddr))
+		if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			l.ErrorContext(ctx, fmt.Sprintf("HTTP server has encountered an error: %v", err))
+			cancel()
 		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+	defer shutdownCancel()
+
+	if err = server.Shutdown(shutdownCtx); err != nil {
+		l.ErrorContext(ctx, fmt.Sprintf("HTTP server shutdown failed: %v", err))
+		return fmt.Errorf("HTTP server shutdown failed: %w", err)
 	}
 
 	return nil
