@@ -177,20 +177,6 @@ func (s *Storage) GetUserWithdrawals(ctx context.Context, userID int) ([]models.
 }
 
 func (s *Storage) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
-	var orderExists bool
-	existsQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM orders WHERE order_number = $1 AND user_id = $2
-	 	)
-	`
-	err := s.pool.QueryRow(ctx, existsQuery, orderNumber, userID).Scan(&orderExists)
-	if err != nil {
-		return fmt.Errorf("failed to query order: %w", err)
-	}
-	if !orderExists {
-		return models.ErrInvalidOrderNumber
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
