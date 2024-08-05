@@ -47,12 +47,12 @@ type Order struct {
 	Accrual     float64     `json:"accrual"`
 }
 
-type HandleRegisterUserRequest struct {
+type HandleUserAuthRequest struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
 }
 
-type HandleLoginUserRequest = HandleRegisterUserRequest
+type HandleLoginUserRequest = HandleUserAuthRequest
 
 type UserOrderResult = struct {
 	UploadedAt  time.Time   `json:"uploaded_at"`

@@ -88,14 +88,14 @@ func TestHandler_HandleUserRegister(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		requestBody        models.HandleRegisterUserRequest
+		requestBody        models.HandleUserAuthRequest
 		setupMockService   func()
 		expectedStatusCode int
 		expectedCookies    []*http.Cookie
 	}{
 		{
 			name: "Successful registration",
-			requestBody: models.HandleRegisterUserRequest{
+			requestBody: models.HandleUserAuthRequest{
 				Login:    "newuser",
 				Password: "newpass",
 			},
@@ -113,7 +113,7 @@ func TestHandler_HandleUserRegister(t *testing.T) {
 		},
 		{
 			name: "Duplicate login",
-			requestBody: models.HandleRegisterUserRequest{
+			requestBody: models.HandleUserAuthRequest{
 				Login:    "existinguser",
 				Password: "password",
 			},
@@ -124,7 +124,7 @@ func TestHandler_HandleUserRegister(t *testing.T) {
 		},
 		{
 			name: "Missing fields",
-			requestBody: models.HandleRegisterUserRequest{
+			requestBody: models.HandleUserAuthRequest{
 				Login:    "",
 				Password: "",
 			},
@@ -133,7 +133,7 @@ func TestHandler_HandleUserRegister(t *testing.T) {
 		},
 		{
 			name: "Error during registration",
-			requestBody: models.HandleRegisterUserRequest{
+			requestBody: models.HandleUserAuthRequest{
 				Login:    "erroruser",
 				Password: "password",
 			},

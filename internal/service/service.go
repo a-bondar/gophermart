@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,7 +18,17 @@ import (
 	"github.com/a-bondar/gophermart/internal/config"
 	"github.com/a-bondar/gophermart/internal/models"
 
+	"github.com/go-resty/resty/v2"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	HTTPClientTimeout               = time.Second * 10
+	RetryCount                      = 3
+	RetryWaitTime                   = time.Second * 2
+	CheckOrderAccrualStatusInterval = 10 * time.Second
+	workerCount                     = 10
+	orderChanSize                   = 100
 )
 
 type Storage interface {
@@ -38,22 +49,30 @@ type Service struct {
 	storage    Storage
 	logger     *slog.Logger
 	cfg        *config.Config
-	httpClient *http.Client
+	httpClient *resty.Client
 	ticker     *time.Ticker
+	orderChan  chan string
+	wg         sync.WaitGroup
 	sleepUntil int64
 }
 
 func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Service {
+	client := resty.New().
+		SetTimeout(HTTPClientTimeout).
+		SetRetryCount(RetryCount).
+		SetRetryWaitTime(RetryWaitTime).
+		AddRetryCondition(func(r *resty.Response, err error) bool {
+			return r.StatusCode() >= 500 || err != nil
+		})
+
 	return &Service{
 		storage:    storage,
 		logger:     logger,
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: HTTPClientTimeout},
+		httpClient: client,
+		orderChan:  make(chan string, orderChanSize),
 	}
 }
-
-const CheckOrderAccrualStatusInterval = 10 * time.Second
-const HTTPClientTimeout = 5 * time.Second
 
 func validateOrderNumber(orderNumber string) error {
 	number, err := strconv.Atoi(orderNumber)
@@ -230,27 +249,18 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 		return fmt.Errorf("failed to join URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, http.NoBody)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	resp, err := s.httpClient.R().
+		SetContext(ctx).
+		Get(requestURL)
 
-	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 
-	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
-			s.logger.ErrorContext(ctx, err.Error())
-		}
-	}()
-
-	switch resp.StatusCode {
+	switch resp.StatusCode() {
 	case http.StatusOK:
 		var orderUpdate models.AccrualServiceResponse
-		if err = json.NewDecoder(resp.Body).Decode(&orderUpdate); err != nil {
+		if err = json.Unmarshal(resp.Body(), &orderUpdate); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 
@@ -259,7 +269,7 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 			return fmt.Errorf("failed to update order: %w", err)
 		}
 	case http.StatusTooManyRequests:
-		retryAfter := resp.Header.Get("Retry-After")
+		retryAfter := resp.Header().Get("Retry-After")
 		if retryAfter != "" {
 			duration, err := strconv.Atoi(retryAfter)
 			if err == nil {
@@ -272,13 +282,13 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 	case http.StatusInternalServerError:
 		s.logger.WarnContext(ctx, "Internal server error from external service")
 	default:
-		s.logger.WarnContext(ctx, "Unexpected status from external service", slog.Int("status", resp.StatusCode))
+		s.logger.WarnContext(ctx, "Unexpected status from external service", slog.Int("status", resp.StatusCode()))
 	}
 
 	return nil
 }
 
-func (s *Service) updateOrderStatuses(ctx context.Context) {
+func (s *Service) processPendingOrders(ctx context.Context) {
 	orders, err := s.storage.GetPendingOrders(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, err.Error())
@@ -286,9 +296,28 @@ func (s *Service) updateOrderStatuses(ctx context.Context) {
 	}
 
 	for _, order := range orders {
-		err = s.processOrder(ctx, order.OrderNumber)
-		if err != nil {
-			s.logger.ErrorContext(ctx, err.Error(), slog.String("orderNumber", order.OrderNumber))
+		select {
+		case s.orderChan <- order.OrderNumber:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Service) worker(ctx context.Context) {
+	defer s.wg.Done()
+
+	for {
+		select {
+		case orderNumber, ok := <-s.orderChan:
+			if !ok {
+				return
+			}
+			if err := s.processOrder(ctx, orderNumber); err != nil {
+				s.logger.ErrorContext(ctx, err.Error(), slog.String("orderNumber", orderNumber))
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -296,17 +325,30 @@ func (s *Service) updateOrderStatuses(ctx context.Context) {
 func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
 	s.ticker = time.NewTicker(CheckOrderAccrualStatusInterval)
 
+	for range workerCount {
+		s.wg.Add(1)
+		go s.worker(ctx)
+	}
+
 	go func() {
+		defer s.ticker.Stop()
+		defer s.wg.Wait()
+
 		for {
+			sleepDuration := time.Until(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0))
+			if sleepDuration > 0 {
+				s.logger.InfoContext(ctx, "Sleeping due to rate limit",
+					slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
+				select {
+				case <-time.After(sleepDuration):
+				case <-ctx.Done():
+					return
+				}
+			}
+
 			select {
 			case <-s.ticker.C:
-				if time.Now().Before(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)) {
-					s.logger.InfoContext(ctx,
-						"Sleeping due to rate limit", slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
-					continue
-				}
-
-				s.updateOrderStatuses(ctx)
+				s.processPendingOrders(ctx)
 			case <-ctx.Done():
 				s.logger.InfoContext(ctx, "Check Accrual Order Status job stopped")
 				return
@@ -316,5 +358,7 @@ func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
 }
 
 func (s *Service) StopOrderAccrualStatusJob() {
+	close(s.orderChan)
+	s.wg.Wait()
 	s.ticker.Stop()
 }

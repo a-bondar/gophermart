@@ -15,14 +15,13 @@ type Config struct {
 }
 
 func NewConfig() *Config {
-	config := &Config{}
-
-	flag.StringVar(&config.RunAddr, "a", ":8080", "address and port to run server")
-	flag.StringVar(&config.DatabaseURI, "d", "", "database URI")
-	flag.StringVar(&config.AccrualSystemAddress, "r", "http://localhost:8090", "accrual system address")
-	flag.StringVar(&config.JWTSecret, "j", "", "JWT secret")
-	flag.DurationVar(&config.JWTExp, "e", time.Hour, "JWT expiration time")
-	flag.Parse()
+	config := &Config{
+		RunAddr:              ":8080",
+		DatabaseURI:          "",
+		AccrualSystemAddress: "http://localhost:8090",
+		JWTSecret:            "",
+		JWTExp:               time.Hour,
+	}
 
 	if envRunAddr, ok := os.LookupEnv("RUN_ADDRESS"); ok {
 		config.RunAddr = envRunAddr
@@ -43,6 +42,13 @@ func NewConfig() *Config {
 	if envJWTExp, ok := os.LookupEnv("JWT_EXP"); ok {
 		config.JWTExp, _ = time.ParseDuration(envJWTExp)
 	}
+
+	flag.StringVar(&config.RunAddr, "a", config.RunAddr, "address and port to run server")
+	flag.StringVar(&config.DatabaseURI, "d", config.DatabaseURI, "database URI")
+	flag.StringVar(&config.AccrualSystemAddress, "r", config.AccrualSystemAddress, "accrual system address")
+	flag.StringVar(&config.JWTSecret, "j", config.JWTSecret, "JWT secret")
+	flag.DurationVar(&config.JWTExp, "e", config.JWTExp, "JWT expiration time")
+	flag.Parse()
 
 	return config
 }
