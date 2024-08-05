@@ -30,7 +30,7 @@ func WithGzip(logger *slog.Logger) func(h http.Handler) http.Handler {
 
 				defer func() {
 					if err := gzReader.Close(); err != nil {
-						logger.Error("Cannot close gzip reader")
+						logger.ErrorContext(r.Context(), "Cannot close gzip reader")
 					}
 				}()
 
@@ -42,7 +42,7 @@ func WithGzip(logger *slog.Logger) func(h http.Handler) http.Handler {
 
 				defer func() {
 					if err := gzWriter.Close(); err != nil {
-						logger.Error("Cannot close gzip writer")
+						logger.ErrorContext(r.Context(), "Cannot close gzip writer")
 					}
 				}()
 
