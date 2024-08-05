@@ -17,7 +17,15 @@ import (
 	"github.com/a-bondar/gophermart/internal/config"
 	"github.com/a-bondar/gophermart/internal/models"
 
+	"github.com/go-resty/resty/v2"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	HTTPClientTimeout               = time.Second * 10
+	RetryCount                      = 3
+	RetryWaitTime                   = time.Second * 2
+	CheckOrderAccrualStatusInterval = 10 * time.Second
 )
 
 type Storage interface {
@@ -38,22 +46,27 @@ type Service struct {
 	storage    Storage
 	logger     *slog.Logger
 	cfg        *config.Config
-	httpClient *http.Client
+	httpClient *resty.Client
 	ticker     *time.Ticker
 	sleepUntil int64
 }
 
 func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Service {
+	client := resty.New().
+		SetTimeout(HTTPClientTimeout).
+		SetRetryCount(RetryCount).
+		SetRetryWaitTime(RetryWaitTime).
+		AddRetryCondition(func(r *resty.Response, err error) bool {
+			return r.StatusCode() >= 500 || err != nil
+		})
+
 	return &Service{
 		storage:    storage,
 		logger:     logger,
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: HTTPClientTimeout},
+		httpClient: client,
 	}
 }
-
-const CheckOrderAccrualStatusInterval = 10 * time.Second
-const HTTPClientTimeout = 5 * time.Second
 
 func validateOrderNumber(orderNumber string) error {
 	number, err := strconv.Atoi(orderNumber)
@@ -230,27 +243,18 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 		return fmt.Errorf("failed to join URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, http.NoBody)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	resp, err := s.httpClient.R().
+		SetContext(ctx).
+		Get(requestURL)
 
-	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 
-	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
-			s.logger.ErrorContext(ctx, err.Error())
-		}
-	}()
-
-	switch resp.StatusCode {
+	switch resp.StatusCode() {
 	case http.StatusOK:
 		var orderUpdate models.AccrualServiceResponse
-		if err = json.NewDecoder(resp.Body).Decode(&orderUpdate); err != nil {
+		if err = json.Unmarshal(resp.Body(), &orderUpdate); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 
@@ -259,7 +263,7 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 			return fmt.Errorf("failed to update order: %w", err)
 		}
 	case http.StatusTooManyRequests:
-		retryAfter := resp.Header.Get("Retry-After")
+		retryAfter := resp.Header().Get("Retry-After")
 		if retryAfter != "" {
 			duration, err := strconv.Atoi(retryAfter)
 			if err == nil {
@@ -272,7 +276,7 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 	case http.StatusInternalServerError:
 		s.logger.WarnContext(ctx, "Internal server error from external service")
 	default:
-		s.logger.WarnContext(ctx, "Unexpected status from external service", slog.Int("status", resp.StatusCode))
+		s.logger.WarnContext(ctx, "Unexpected status from external service", slog.Int("status", resp.StatusCode()))
 	}
 
 	return nil
