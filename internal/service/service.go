@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +27,8 @@ const (
 	RetryCount                      = 3
 	RetryWaitTime                   = time.Second * 2
 	CheckOrderAccrualStatusInterval = 10 * time.Second
+	workerCount                     = 10
+	orderChanSize                   = 100
 )
 
 type Storage interface {
@@ -48,6 +51,8 @@ type Service struct {
 	cfg        *config.Config
 	httpClient *resty.Client
 	ticker     *time.Ticker
+	orderChan  chan string
+	wg         sync.WaitGroup
 	sleepUntil int64
 }
 
@@ -65,6 +70,7 @@ func NewService(storage Storage, logger *slog.Logger, cfg *config.Config) *Servi
 		logger:     logger,
 		cfg:        cfg,
 		httpClient: client,
+		orderChan:  make(chan string, orderChanSize),
 	}
 }
 
@@ -282,7 +288,7 @@ func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 	return nil
 }
 
-func (s *Service) updateOrderStatuses(ctx context.Context) {
+func (s *Service) processPendingOrders(ctx context.Context) {
 	orders, err := s.storage.GetPendingOrders(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, err.Error())
@@ -290,9 +296,28 @@ func (s *Service) updateOrderStatuses(ctx context.Context) {
 	}
 
 	for _, order := range orders {
-		err = s.processOrder(ctx, order.OrderNumber)
-		if err != nil {
-			s.logger.ErrorContext(ctx, err.Error(), slog.String("orderNumber", order.OrderNumber))
+		select {
+		case s.orderChan <- order.OrderNumber:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Service) worker(ctx context.Context) {
+	defer s.wg.Done()
+
+	for {
+		select {
+		case orderNumber, ok := <-s.orderChan:
+			if !ok {
+				return
+			}
+			if err := s.processOrder(ctx, orderNumber); err != nil {
+				s.logger.ErrorContext(ctx, err.Error(), slog.String("orderNumber", orderNumber))
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -300,17 +325,30 @@ func (s *Service) updateOrderStatuses(ctx context.Context) {
 func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
 	s.ticker = time.NewTicker(CheckOrderAccrualStatusInterval)
 
+	for range workerCount {
+		s.wg.Add(1)
+		go s.worker(ctx)
+	}
+
 	go func() {
+		defer s.ticker.Stop()
+		defer s.wg.Wait()
+
 		for {
+			sleepDuration := time.Until(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0))
+			if sleepDuration > 0 {
+				s.logger.InfoContext(ctx, "Sleeping due to rate limit",
+					slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
+				select {
+				case <-time.After(sleepDuration):
+				case <-ctx.Done():
+					return
+				}
+			}
+
 			select {
 			case <-s.ticker.C:
-				if time.Now().Before(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)) {
-					s.logger.InfoContext(ctx,
-						"Sleeping due to rate limit", slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
-					continue
-				}
-
-				s.updateOrderStatuses(ctx)
+				s.processPendingOrders(ctx)
 			case <-ctx.Done():
 				s.logger.InfoContext(ctx, "Check Accrual Order Status job stopped")
 				return
@@ -320,5 +358,7 @@ func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
 }
 
 func (s *Service) StopOrderAccrualStatusJob() {
+	close(s.orderChan)
+	s.wg.Wait()
 	s.ticker.Stop()
 }

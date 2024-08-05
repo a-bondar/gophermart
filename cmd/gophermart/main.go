@@ -32,17 +32,8 @@ func Run() error {
 	cfg := config.NewConfig()
 	l := logger.NewLogger()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigs
-		l.InfoContext(ctx, "Shutting down gracefully", slog.String("signal", sig.String()))
-		cancel()
-	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	s, err := storage.NewStorage(ctx, cfg.DatabaseURI)
 	if err != nil {
@@ -67,7 +58,7 @@ func Run() error {
 		l.InfoContext(ctx, "Running server", slog.String("address", cfg.RunAddr))
 		if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			l.ErrorContext(ctx, fmt.Sprintf("HTTP server has encountered an error: %v", err))
-			cancel()
+			stop()
 		}
 	}()
 
@@ -81,5 +72,6 @@ func Run() error {
 		return fmt.Errorf("HTTP server shutdown failed: %w", err)
 	}
 
+	l.InfoContext(ctx, "Server stopped gracefully")
 	return nil
 }
