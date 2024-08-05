@@ -118,3 +118,10 @@ To roll back the last migration, run:
  ```sh
  make db_migrate_down
  ```
+
+### Run Tests
+To run tests, run:
+
+ ```sh
+ make test
+ ```
