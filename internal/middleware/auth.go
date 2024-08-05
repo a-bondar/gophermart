@@ -15,11 +15,11 @@ import (
 type key int
 
 const (
-	userIDKey key = iota
+	UserIDKey key = iota
 )
 
 func GetUserIDFromContext(ctx context.Context) (int, error) {
-	value := ctx.Value(userIDKey)
+	value := ctx.Value(UserIDKey)
 	if value == nil {
 		return 0, errors.New("user ID not found in context")
 	}
@@ -68,7 +68,7 @@ func WithAuth(logger *slog.Logger, cfg *config.Config) func(h http.Handler) http
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			ctx := context.WithValue(r.Context(), UserIDKey, userID)
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

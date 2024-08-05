@@ -62,3 +62,8 @@ db_migrate_up:
 db_migrate_down:
 	@echo "Rolling back migrations..."
 	docker compose run --rm migrate -path /migrations -database ${DATABASE_URI} down 1
+
+# Running tests
+test:
+	@echo "Running tests..."
+	docker run --rm -v $(shell pwd):/app -w /app golang:1.22.5 go test -v ./...
