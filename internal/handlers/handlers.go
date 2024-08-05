@@ -19,9 +19,8 @@ import (
 )
 
 const (
-	missingRequiredFields = "Missing required fields: login or password"
-	ContentType           = "Content-Type"
-	ApplicationJSON       = "application/json"
+	ContentType     = "Content-Type"
+	ApplicationJSON = "application/json"
 )
 
 type Service interface {
@@ -49,49 +48,42 @@ func NewHandler(service Service, logger *slog.Logger, cfg *config.Config) *Handl
 	}
 }
 
-func (h *Handler) HandleUserRegister(w http.ResponseWriter, r *http.Request) {
-	var request models.HandleRegisterUserRequest
+func (h *Handler) handleUserAuth(
+	w http.ResponseWriter,
+	r *http.Request,
+	isRegistration bool,
+) {
 	var buf bytes.Buffer
 
-	_, err := buf.ReadFrom(r.Body)
-	if err != nil {
+	if _, err := buf.ReadFrom(r.Body); err != nil {
 		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusBadRequest)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 
-	err = json.Unmarshal(buf.Bytes(), &request)
-	if err != nil {
+	var request models.HandleUserAuthRequest
+	if err := json.Unmarshal(buf.Bytes(), &request); err != nil {
 		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
+		http.Error(w, "Failed to decode JSON", http.StatusInternalServerError)
 		return
 	}
 
 	if request.Login == "" || request.Password == "" {
-		h.logger.ErrorContext(r.Context(), missingRequiredFields)
-		http.Error(w, missingRequiredFields, http.StatusBadRequest)
+		h.logger.ErrorContext(r.Context(), "Missing required fields: login or password")
+		http.Error(w, "Missing required fields: login or password", http.StatusBadRequest)
 		return
 	}
 
-	err = h.service.CreateUser(r.Context(), request.Login, request.Password)
-	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		var message string
-		status := http.StatusInternalServerError
-
-		if errors.Is(err, models.ErrUserDuplicateLogin) {
-			message = "login already exists"
-			status = http.StatusConflict
+	if isRegistration {
+		if err := h.service.CreateUser(r.Context(), request.Login, request.Password); err != nil {
+			h.handleRegistrationError(r.Context(), w, err)
+			return
 		}
-
-		http.Error(w, message, status)
-		return
 	}
 
 	token, err := h.service.AuthenticateUser(r.Context(), request.Login, request.Password)
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
+		h.handleAuthError(r.Context(), w, err)
 		return
 	}
 
@@ -105,52 +97,42 @@ func (h *Handler) HandleUserRegister(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *Handler) HandleUserRegister(w http.ResponseWriter, r *http.Request) {
+	h.handleUserAuth(w, r, true)
+}
+
 func (h *Handler) HandleUserLogin(w http.ResponseWriter, r *http.Request) {
-	var request models.HandleLoginUserRequest
-	var buf bytes.Buffer
+	h.handleUserAuth(w, r, false)
+}
 
-	_, err := buf.ReadFrom(r.Body)
-	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusBadRequest)
-		return
+func (h *Handler) handleRegistrationError(ctx context.Context, w http.ResponseWriter, err error) {
+	var message string
+	status := http.StatusInternalServerError
+
+	if errors.Is(err, models.ErrUserDuplicateLogin) {
+		message = "Login already exists"
+		status = http.StatusConflict
+	} else {
+		message = "Internal server error"
 	}
 
-	err = json.Unmarshal(buf.Bytes(), &request)
-	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+	h.logger.ErrorContext(ctx, err.Error())
+	http.Error(w, message, status)
+}
+
+func (h *Handler) handleAuthError(ctx context.Context, w http.ResponseWriter, err error) {
+	var message string
+	status := http.StatusInternalServerError
+
+	if errors.Is(err, models.ErrUserInvalidCredentials) {
+		message = "Invalid login or password"
+		status = http.StatusUnauthorized
+	} else {
+		message = "Internal server error"
 	}
 
-	if request.Login == "" || request.Password == "" {
-		h.logger.ErrorContext(r.Context(), missingRequiredFields)
-		http.Error(w, missingRequiredFields, http.StatusBadRequest)
-		return
-	}
-
-	token, err := h.service.AuthenticateUser(r.Context(), request.Login, request.Password)
-	if err != nil {
-		h.logger.ErrorContext(r.Context(), err.Error())
-		var message string
-		status := http.StatusInternalServerError
-
-		if errors.Is(err, models.ErrUserInvalidCredentials) {
-			message = "invalid login or password"
-			status = http.StatusUnauthorized
-		}
-
-		http.Error(w, message, status)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth_token",
-		Value:    token,
-		Expires:  time.Now().Add(h.cfg.JWTExp),
-		HttpOnly: true,
-	})
-	w.WriteHeader(http.StatusOK)
+	h.logger.ErrorContext(ctx, err.Error())
+	http.Error(w, message, status)
 }
 
 func (h *Handler) HandleUserBalance(w http.ResponseWriter, r *http.Request) {
