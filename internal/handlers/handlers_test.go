@@ -135,7 +135,7 @@ func TestHandler_HandleUserLogin(t *testing.T) {
 		JWTExp:    1 * time.Hour,
 	}
 
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	handler := handlers.NewHandler(mockService, logger, cfg)
 
 	tests := []struct {
@@ -228,14 +228,12 @@ func TestHandler_HandleUserLogin(t *testing.T) {
 					}, "Expected cookie not found: %v", expectedCookie)
 				}
 			}
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
 
 func TestHandler_HandleUserBalance(t *testing.T) {
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	logger := slog.Default()
 	cfg := &config.Config{
 		JWTSecret: "test-secret",
@@ -295,14 +293,12 @@ func TestHandler_HandleUserBalance(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, *tt.expectedBody, actualBody)
 			}
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
 
 func TestHandler_HandlePostUserOrders(t *testing.T) {
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	logger := slog.Default()
 	cfg := &config.Config{}
 
@@ -402,14 +398,12 @@ func TestHandler_HandlePostUserOrders(t *testing.T) {
 			handler.HandlePostUserOrders(rr, req)
 
 			assert.Equal(t, tt.expectedStatusCode, rr.Code)
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
 
 func TestHandler_HandleGetUserOrders(t *testing.T) {
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
@@ -491,14 +485,12 @@ func TestHandler_HandleGetUserOrders(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedBody, actualBody)
 			}
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
 
 func TestHandler_HandleGetUserWithdrawals(t *testing.T) {
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
@@ -566,14 +558,12 @@ func TestHandler_HandleGetUserWithdrawals(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedBody, actualBody)
 			}
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
 
 func TestHandler_HandleUserWithdraw(t *testing.T) {
-	mockService := new(mocks.Service)
+	mockService := mocks.NewService(t)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
@@ -665,8 +655,6 @@ func TestHandler_HandleUserWithdraw(t *testing.T) {
 			if tt.expectedError != "" {
 				assert.Contains(t, rr.Body.String(), tt.expectedError)
 			}
-
-			mockService.AssertExpectations(t)
 		})
 	}
 }
