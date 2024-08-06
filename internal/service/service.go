@@ -26,7 +26,7 @@ const (
 	HTTPClientTimeout               = time.Second * 10
 	RetryCount                      = 3
 	RetryWaitTime                   = time.Second * 2
-	CheckOrderAccrualStatusInterval = 10 * time.Second
+	CheckOrderAccrualStatusInterval = time.Second * 10
 	workerCount                     = 10
 	orderChanSize                   = 100
 )
@@ -243,6 +243,19 @@ func (s *Service) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) sleepIfNecessary(ctx context.Context) {
+	sleepDuration := time.Until(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0))
+	if sleepDuration > 0 {
+		s.logger.InfoContext(ctx, "Sleeping due to rate limit",
+			slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
+		select {
+		case <-time.After(sleepDuration):
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func (s *Service) processOrder(ctx context.Context, orderNumber string) error {
 	requestURL, err := url.JoinPath(s.cfg.AccrualSystemAddress, "api/orders", orderNumber)
 	if err != nil {
@@ -308,6 +321,8 @@ func (s *Service) worker(ctx context.Context) {
 	defer s.wg.Done()
 
 	for {
+		s.sleepIfNecessary(ctx)
+
 		select {
 		case orderNumber, ok := <-s.orderChan:
 			if !ok {
@@ -335,16 +350,7 @@ func (s *Service) StartOrderAccrualStatusJob(ctx context.Context) {
 		defer s.wg.Wait()
 
 		for {
-			sleepDuration := time.Until(time.Unix(atomic.LoadInt64(&s.sleepUntil), 0))
-			if sleepDuration > 0 {
-				s.logger.InfoContext(ctx, "Sleeping due to rate limit",
-					slog.Time("until", time.Unix(atomic.LoadInt64(&s.sleepUntil), 0)))
-				select {
-				case <-time.After(sleepDuration):
-				case <-ctx.Done():
-					return
-				}
-			}
+			s.sleepIfNecessary(ctx)
 
 			select {
 			case <-s.ticker.C:
