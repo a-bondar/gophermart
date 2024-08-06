@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/a-bondar/gophermart/mocks"
+
 	"github.com/a-bondar/gophermart/internal/middleware"
 	"github.com/stretchr/testify/require"
 
@@ -22,60 +24,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-type MockService struct {
-	mock.Mock
-}
-
-func (m *MockService) CreateUser(ctx context.Context, login, password string) error {
-	args := m.Called(ctx, login, password)
-
-	return args.Error(0) //nolint:wrapcheck //test helper
-}
-
-func (m *MockService) AuthenticateUser(ctx context.Context, login, password string) (string, error) {
-	args := m.Called(ctx, login, password)
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockService) GetUserBalance(ctx context.Context, userID int) (*models.Balance, error) {
-	args := m.Called(ctx, userID)
-	balance, _ := args.Get(0).(*models.Balance)
-
-	return balance, args.Error(1) //nolint:wrapcheck // test helper
-}
-
-func (m *MockService) CreateOrder(ctx context.Context, userID int, orderNumber string) (*models.Order, bool, error) {
-	args := m.Called(ctx, userID, orderNumber)
-	order, _ := args.Get(0).(*models.Order)
-
-	return order, args.Bool(1), args.Error(2)
-}
-
-func (m *MockService) GetUserOrders(ctx context.Context, userID int) ([]models.UserOrderResult, error) {
-	args := m.Called(ctx, userID)
-	orderResult, _ := args.Get(0).([]models.UserOrderResult)
-
-	return orderResult, args.Error(1) //nolint:wrapcheck // test helper
-}
-
-func (m *MockService) GetUserWithdrawals(ctx context.Context, userID int) ([]models.UserWithdrawalResult, error) {
-	args := m.Called(ctx, userID)
-	withdrawalResult, _ := args.Get(0).([]models.UserWithdrawalResult)
-
-	return withdrawalResult, args.Error(1) //nolint:wrapcheck // test helper
-}
-
-func (m *MockService) UserWithdrawBonuses(ctx context.Context, userID int, orderNumber string, sum float64) error {
-	args := m.Called(ctx, userID, orderNumber, sum)
-
-	return args.Error(0) //nolint:wrapcheck // test helper
-}
-
-func (m *MockService) Ping(ctx context.Context) error {
-	return nil
-}
-
 func TestHandler_HandleUserRegister(t *testing.T) {
 	logger := slog.Default()
 	cfg := &config.Config{
@@ -83,7 +31,7 @@ func TestHandler_HandleUserRegister(t *testing.T) {
 		JWTExp:    1 * time.Hour,
 	}
 
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	handler := handlers.NewHandler(mockService, logger, cfg)
 
 	tests := []struct {
@@ -187,7 +135,7 @@ func TestHandler_HandleUserLogin(t *testing.T) {
 		JWTExp:    1 * time.Hour,
 	}
 
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	handler := handlers.NewHandler(mockService, logger, cfg)
 
 	tests := []struct {
@@ -287,7 +235,7 @@ func TestHandler_HandleUserLogin(t *testing.T) {
 }
 
 func TestHandler_HandleUserBalance(t *testing.T) {
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	logger := slog.Default()
 	cfg := &config.Config{
 		JWTSecret: "test-secret",
@@ -354,7 +302,7 @@ func TestHandler_HandleUserBalance(t *testing.T) {
 }
 
 func TestHandler_HandlePostUserOrders(t *testing.T) {
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	logger := slog.Default()
 	cfg := &config.Config{}
 
@@ -461,7 +409,7 @@ func TestHandler_HandlePostUserOrders(t *testing.T) {
 }
 
 func TestHandler_HandleGetUserOrders(t *testing.T) {
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
@@ -550,7 +498,7 @@ func TestHandler_HandleGetUserOrders(t *testing.T) {
 }
 
 func TestHandler_HandleGetUserWithdrawals(t *testing.T) {
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
@@ -625,7 +573,7 @@ func TestHandler_HandleGetUserWithdrawals(t *testing.T) {
 }
 
 func TestHandler_HandleUserWithdraw(t *testing.T) {
-	mockService := new(MockService)
+	mockService := new(mocks.Service)
 	logger := slog.Default()
 	cfg := &config.Config{}
 	handler := handlers.NewHandler(mockService, logger, cfg)
