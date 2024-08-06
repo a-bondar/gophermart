@@ -66,4 +66,9 @@ db_migrate_down:
 # Running tests
 test:
 	@echo "Running tests..."
-	docker run --rm -v $(shell pwd):/app -w /app golang:1.22.5 go test -v ./...
+	docker run --rm -v $(shell pwd):/app -w /app golang:1.22.5 go test ./...
+
+# Generate mocks
+mocks:
+	@echo "Generating mocks..."
+	docker run --rm -v $(shell pwd):/app -w /app vektra/mockery --all
