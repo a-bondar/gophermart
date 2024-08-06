@@ -1,0 +1,74 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app
+    depends_on:
+      database:
+        condition: service_healthy
+        restart: true
+      accrual:
+        condition: service_started
+    ports:
+      - "${RUN_PORT}:${RUN_PORT}"
+    environment:
+      RUN_ADDRESS: ${RUN_ADDRESS}
+      ACCRUAL_SYSTEM_ADDRESS: ${ACCRUAL_SYSTEM_ADDRESS}
+      DATABASE_URI: ${DATABASE_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXP}
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          files:
+            - ./**/*.go
+            - ./go.mod
+            - ./go.sum
+
+  accrual:
+    platform: linux/amd64
+    image: debian:bookworm-slim
+    container_name: accrual
+    environment:
+      RUN_ADDRESS: ${ACCRUAL_RUN_ADDRESS}
+    ports:
+      - "${ACCRUAL_SYSTEM_PORT}:${ACCRUAL_SYSTEM_PORT}"
+    volumes:
+      - ./cmd/accrual/accrual_linux_amd64:/app/accrual
+    working_dir: /app
+    command: ["./accrual"]
+
+  database:
+    image: postgres:16.3
+    container_name: database
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate
+    container_name: migrate
+    command: [
+      "-path", "/migrations",
+      "-database", "${DATABASE_URI}",
+      "up"
+    ]
+    volumes:
+      - ./internal/storage/postgres/migrations:/migrations
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DATABASE_URI: ${DATABASE_URI}
